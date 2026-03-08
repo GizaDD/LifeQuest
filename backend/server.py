@@ -46,12 +46,16 @@ class Step(BaseModel):
     title: str
     xpReward: int
     isCompleted: bool = False
+    isDaily: bool = False
+    lastCompletedDate: Optional[datetime] = None
 
 class Task(BaseModel):
     title: str
     xpReward: int
     steps: List[Step] = []
     isCompleted: bool = False
+    isDaily: bool = False
+    lastCompletedDate: Optional[datetime] = None
 
 class SkillReward(BaseModel):
     skillId: str
@@ -93,6 +97,24 @@ class User(BaseModel):
     xpToNextLevel: int = 100
     totalXP: int = 0
     lastDailyReset: Optional[datetime] = None
+    streak: int = 0
+    lastStreakDate: Optional[datetime] = None
+    longestStreak: int = 0
+    totalMissionsCompleted: int = 0
+    totalTasksCompleted: int = 0
+    totalStepsCompleted: int = 0
+
+    class Config:
+        json_encoders = {ObjectId: str}
+
+class Reward(BaseModel):
+    id: Optional[str] = None
+    title: str
+    description: str
+    xpCost: int
+    isPurchased: bool = False
+    purchasedAt: Optional[datetime] = None
+    createdAt: datetime = Field(default_factory=datetime.utcnow)
 
     class Config:
         json_encoders = {ObjectId: str}
@@ -105,11 +127,24 @@ class MissionCreate(BaseModel):
     skillRewards: List[SkillReward] = []
     tasks: List[Task] = []
 
+class MissionUpdate(BaseModel):
+    title: Optional[str] = None
+    description: Optional[str] = None
+    type: Optional[str] = None
+    totalXPReward: Optional[int] = None
+    skillRewards: Optional[List[SkillReward]] = None
+    tasks: Optional[List[Task]] = None
+
 class SkillCreate(BaseModel):
     name: str
 
 class UserUpdateNickname(BaseModel):
     nickname: str
+
+class RewardCreate(BaseModel):
+    title: str
+    description: str
+    xpCost: int
 
 # ==================== HELPER FUNCTIONS ====================
 
@@ -133,6 +168,76 @@ async def level_up_skill(skill: dict) -> dict:
         # For MVP, always 100 XP per level for skills
         skill['xpToNextLevel'] = 100
     return skill
+
+def get_streak_multiplier(streak: int) -> float:
+    """Get XP multiplier based on streak days"""
+    if streak >= 100:
+        return 40.0
+    elif streak >= 66:
+        return 30.0
+    elif streak >= 42:
+        return 20.0
+    elif streak >= 31:
+        return 10.0
+    elif streak >= 21:
+        return 10.0
+    elif streak >= 10:
+        return 5.0
+    return 1.0
+
+async def update_streak():
+    """Update user streak if they completed daily tasks today"""
+    user = await db.users.find_one()
+    if not user:
+        return
+    
+    today = datetime.utcnow().date()
+    last_streak_date = user.get('lastStreakDate')
+    
+    if last_streak_date:
+        last_date = last_streak_date.date()
+        if last_date == today:
+            # Already updated today
+            return
+        elif last_date == today - timedelta(days=1):
+            # Consecutive day
+            user['streak'] += 1
+            if user['streak'] > user.get('longestStreak', 0):
+                user['longestStreak'] = user['streak']
+        else:
+            # Streak broken
+            user['streak'] = 1
+    else:
+        # First streak
+        user['streak'] = 1
+    
+    user['lastStreakDate'] = datetime.utcnow()
+    
+    await db.users.update_one(
+        {'_id': user['_id']},
+        {'$set': {
+            'streak': user['streak'],
+            'lastStreakDate': user['lastStreakDate'],
+            'longestStreak': user.get('longestStreak', user['streak'])
+        }}
+    )
+
+async def check_and_break_streak():
+    """Break streak if user didn't complete tasks yesterday"""
+    user = await db.users.find_one()
+    if not user or not user.get('lastStreakDate'):
+        return
+    
+    today = datetime.utcnow().date()
+    last_date = user['lastStreakDate'].date()
+    
+    # If last completion was more than 1 day ago, break streak
+    if (today - last_date).days > 1:
+        await db.users.update_one(
+            {'_id': user['_id']},
+            {'$set': {'streak': 0}}
+        )
+
 
 async def add_xp_to_user(xp_amount: int):
     """Add XP to user and handle level ups"""
