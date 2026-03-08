@@ -13,6 +13,7 @@ const api = axios.create({
 
 // User APIs
 export const getUser = () => api.get('/user');
+export const updateNickname = (nickname: string) => api.put('/user/nickname', { nickname });
 export const resetDailyMissions = () => api.post('/user/reset-daily');
 
 // Skills APIs

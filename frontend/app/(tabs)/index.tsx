@@ -1,15 +1,19 @@
-import React from 'react';
-import { View, Text, StyleSheet, ScrollView, RefreshControl } from 'react-native';
+import React, { useState } from 'react';
+import { View, Text, StyleSheet, ScrollView, RefreshControl, TouchableOpacity, TextInput, Alert, Modal } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useApp } from '../../contexts/AppContext';
 import { ProgressBar } from '../../components/ProgressBar';
 import { MissionCard } from '../../components/MissionCard';
 import { SkillCard } from '../../components/SkillCard';
 import { useRouter } from 'expo-router';
+import { getLevelInfo } from '../../utils/levelSystem';
+import * as api from '../../utils/api';
 
 export default function HomeScreen() {
   const { user, missions, skills, loading, refreshAll } = useApp();
   const router = useRouter();
+  const [editingNickname, setEditingNickname] = useState(false);
+  const [newNickname, setNewNickname] = useState('');
 
   const activeMissions = missions.filter(m => !m.isCompleted).slice(0, 3);
   const topSkills = skills.slice(0, 3);
@@ -19,6 +23,24 @@ export default function HomeScreen() {
     .filter(m => m.type === 'daily' && !m.isCompleted)
     .flatMap(m => m.tasks.filter(t => !t.isCompleted))
     .slice(0, 5);
+
+  const levelInfo = getLevelInfo(user?.level || 0);
+
+  const handleUpdateNickname = async () => {
+    if (!newNickname.trim()) {
+      Alert.alert('Ошибка', 'Введите никнейм');
+      return;
+    }
+
+    try {
+      await api.updateNickname(newNickname.trim());
+      await refreshAll();
+      setEditingNickname(false);
+      setNewNickname('');
+    } catch (error) {
+      Alert.alert('Ошибка', 'Не удалось обновить никнейм');
+    }
+  };
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -31,10 +53,20 @@ export default function HomeScreen() {
         <View style={styles.content}>
           {/* User Level Section */}
           <View style={styles.userSection}>
+            <View style={styles.levelIconContainer}>
+              <Text style={styles.levelIcon}>{levelInfo.icon}</Text>
+              <Text style={styles.levelTitle}>{levelInfo.title}</Text>
+            </View>
+            
             <View style={styles.userHeader}>
-              <Text style={styles.userName}>Игрок</Text>
-              <View style={styles.levelBadge}>
-                <Text style={styles.levelText}>Уровень {user?.level || 1}</Text>
+              <TouchableOpacity onPress={() => {
+                setNewNickname(user?.nickname || 'Игрок');
+                setEditingNickname(true);
+              }}>
+                <Text style={styles.userName}>{user?.nickname || 'Игрок'} ✏️</Text>
+              </TouchableOpacity>
+              <View style={[styles.levelBadge, { backgroundColor: levelInfo.color }]}>
+                <Text style={styles.levelText}>Уровень {user?.level || 0}</Text>
               </View>
             </View>
             <View style={styles.xpSection}>
@@ -42,7 +74,7 @@ export default function HomeScreen() {
               <ProgressBar 
                 current={user?.currentXP || 0}
                 max={user?.xpToNextLevel || 100}
-                color="#FFD700"
+                color={levelInfo.color}
                 height={24}
               />
             </View>
@@ -90,6 +122,48 @@ export default function HomeScreen() {
           )}
         </View>
       </ScrollView>
+
+      {/* Edit Nickname Modal */}
+      <Modal
+        visible={editingNickname}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setEditingNickname(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Изменить никнейм</Text>
+            
+            <TextInput
+              style={styles.input}
+              placeholder="Ваш никнейм"
+              placeholderTextColor="#666"
+              value={newNickname}
+              onChangeText={setNewNickname}
+              autoFocus
+            />
+
+            <View style={styles.modalButtons}>
+              <TouchableOpacity 
+                style={[styles.modalButton, styles.cancelButton]}
+                onPress={() => {
+                  setNewNickname('');
+                  setEditingNickname(false);
+                }}
+              >
+                <Text style={styles.cancelButtonText}>Отмена</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity 
+                style={[styles.modalButton, styles.saveButton]}
+                onPress={handleUpdateNickname}
+              >
+                <Text style={styles.saveButtonText}>Сохранить</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -112,6 +186,20 @@ const styles = StyleSheet.create({
     marginBottom: 24,
     borderWidth: 2,
     borderColor: '#FFD700',
+  levelIconContainer: {
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  levelIcon: {
+    fontSize: 72,
+    marginBottom: 8,
+  },
+  levelTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#FFD700',
+    textAlign: 'center',
+  },
   },
   userHeader: {
     flexDirection: 'row',
@@ -181,6 +269,62 @@ const styles = StyleSheet.create({
   taskXP: {
     color: '#FFD700',
     fontSize: 12,
+    fontWeight: 'bold',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.8)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  modalContent: {
+    backgroundColor: '#1a1a1a',
+    borderRadius: 16,
+    padding: 24,
+    width: '100%',
+    maxWidth: 400,
+  },
+  modalTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#fff',
+    marginBottom: 20,
+  },
+  input: {
+    backgroundColor: '#2a2a2a',
+    color: '#fff',
+    borderRadius: 8,
+    padding: 12,
+    fontSize: 16,
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: '#333',
+  },
+  modalButtons: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  modalButton: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  cancelButton: {
+    backgroundColor: '#2a2a2a',
+  },
+  saveButton: {
+    backgroundColor: '#FFD700',
+  },
+  cancelButtonText: {
+    color: '#aaa',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  saveButtonText: {
+    color: '#000',
+    fontSize: 16,
     fontWeight: 'bold',
   },
 });

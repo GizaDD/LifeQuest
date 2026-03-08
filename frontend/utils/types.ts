@@ -1,5 +1,6 @@
 export interface User {
   id?: string;
+  nickname: string;
   level: number;
   currentXP: number;
   xpToNextLevel: number;

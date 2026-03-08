@@ -76,7 +76,7 @@ class Mission(BaseModel):
 class Skill(BaseModel):
     id: Optional[str] = None
     name: str
-    level: int = 1
+    level: int = 0
     currentXP: int = 0
     xpToNextLevel: int = 100
     isDefault: bool = False
@@ -87,7 +87,8 @@ class Skill(BaseModel):
 
 class User(BaseModel):
     id: Optional[str] = None
-    level: int = 1
+    nickname: str = "Игрок"
+    level: int = 0
     currentXP: int = 0
     xpToNextLevel: int = 100
     totalXP: int = 0
@@ -106,6 +107,9 @@ class MissionCreate(BaseModel):
 
 class SkillCreate(BaseModel):
     name: str
+
+class UserUpdateNickname(BaseModel):
+    nickname: str
 
 # ==================== HELPER FUNCTIONS ====================
 
@@ -192,6 +196,24 @@ async def get_user():
     
     user['id'] = str(user['_id'])
     return User(**user)
+
+@api_router.put("/user/nickname", response_model=User)
+async def update_nickname(nickname_data: UserUpdateNickname):
+    """Update user nickname"""
+    user = await db.users.find_one()
+    
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    await db.users.update_one(
+        {'_id': user['_id']},
+        {'$set': {'nickname': nickname_data.nickname}}
+    )
+    
+    updated_user = await db.users.find_one({'_id': user['_id']})
+    updated_user['id'] = str(updated_user['_id'])
+    return User(**updated_user)
+
 
 @api_router.post("/user/reset-daily")
 async def reset_daily_missions():
