@@ -19,6 +19,13 @@ export default function RootLayout() {
           name="missions/[id]" 
           options={{ headerShown: false }} 
         />
+        <Stack.Screen 
+          name="missions/edit/[id]" 
+          options={{ 
+            presentation: 'modal',
+            headerShown: false 
+          }} 
+        />
       </Stack>
     </AppProvider>
   );

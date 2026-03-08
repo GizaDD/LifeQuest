@@ -140,9 +140,17 @@ export default function MissionDetailScreen() {
         <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
           <Text style={styles.backButtonText}>← Назад</Text>
         </TouchableOpacity>
-        <TouchableOpacity onPress={handleDeleteMission}>
-          <Text style={styles.deleteText}>Удалить</Text>
-        </TouchableOpacity>
+        <View style={styles.headerButtons}>
+          <TouchableOpacity 
+            onPress={() => router.push(`/missions/edit/${mission.id}`)}
+            style={styles.editButton}
+          >
+            <Text style={styles.editText}>✎ Править</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={handleDeleteMission}>
+            <Text style={styles.deleteText}>Удалить</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       <ScrollView style={styles.scrollView}>
@@ -270,6 +278,22 @@ const styles = StyleSheet.create({
   backButtonText: {
     color: '#FFD700',
     fontSize: 16,
+    fontWeight: '600',
+  },
+  headerButtons: {
+    flexDirection: 'row',
+    gap: 12,
+    alignItems: 'center',
+  },
+  editButton: {
+    backgroundColor: '#4ECDC4',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  editText: {
+    color: '#000',
+    fontSize: 14,
     fontWeight: '600',
   },
   deleteText: {
