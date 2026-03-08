@@ -212,6 +212,40 @@ async def update_nickname(nickname_data: UserUpdateNickname):
     
     updated_user = await db.users.find_one({'_id': user['_id']})
     updated_user['id'] = str(updated_user['_id'])
+
+@api_router.post("/user/reset-progress")
+async def reset_user_progress():
+    """Reset user progress to level 0"""
+    user = await db.users.find_one()
+    
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    # Reset user to level 0
+    await db.users.update_one(
+        {'_id': user['_id']},
+        {'$set': {
+            'level': 0,
+            'currentXP': 0,
+            'xpToNextLevel': 100,
+            'totalXP': 0
+        }}
+    )
+    
+    # Reset all skills to level 0
+    await db.skills.update_many(
+        {},
+        {'$set': {
+            'level': 0,
+            'currentXP': 0,
+            'xpToNextLevel': 100
+        }}
+    )
+    
+    updated_user = await db.users.find_one({'_id': user['_id']})
+    updated_user['id'] = str(updated_user['_id'])
+    return {"message": "Progress reset successfully", "user": User(**updated_user)}
+
     return User(**updated_user)
 
 

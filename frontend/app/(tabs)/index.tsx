@@ -53,22 +53,27 @@ export default function HomeScreen() {
         <View style={styles.content}>
           {/* User Level Section */}
           <View style={styles.userSection}>
-            <View style={styles.levelIconContainer}>
-              <Text style={styles.levelIcon}>{levelInfo.icon}</Text>
-              <Text style={styles.levelTitle}>{levelInfo.title}</Text>
+            {/* Level Icon as Avatar */}
+            <View style={styles.avatarContainer}>
+              <Text style={styles.avatarIcon}>{levelInfo.icon}</Text>
             </View>
             
-            <View style={styles.userHeader}>
-              <TouchableOpacity onPress={() => {
+            {/* User Info */}
+            <TouchableOpacity 
+              onPress={() => {
                 setNewNickname(user?.nickname || 'Игрок');
                 setEditingNickname(true);
-              }}>
-                <Text style={styles.userName}>{user?.nickname || 'Игрок'} ✏️</Text>
-              </TouchableOpacity>
-              <View style={[styles.levelBadge, { backgroundColor: levelInfo.color }]}>
-                <Text style={styles.levelText}>Уровень {user?.level || 0}</Text>
-              </View>
+              }}
+              style={styles.userInfoContainer}
+            >
+              <Text style={styles.userNickname}>{user?.nickname || 'Игрок'}</Text>
+              <Text style={styles.levelTitle}>{levelInfo.title}</Text>
+            </TouchableOpacity>
+
+            <View style={[styles.levelBadge, { backgroundColor: levelInfo.color }]}>
+              <Text style={styles.levelText}>Уровень {user?.level || 0}</Text>
             </View>
+            
             <View style={styles.xpSection}>
               <Text style={styles.xpLabel}>Опыт</Text>
               <ProgressBar 
@@ -186,6 +191,33 @@ const styles = StyleSheet.create({
     marginBottom: 24,
     borderWidth: 2,
     borderColor: '#FFD700',
+    alignItems: 'center',
+  },
+  avatarContainer: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    backgroundColor: '#2a2a2a',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 16,
+    borderWidth: 3,
+    borderColor: '#FFD700',
+  },
+  avatarIcon: {
+    fontSize: 80,
+  },
+  userInfoContainer: {
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  userNickname: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    color: '#fff',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
   levelIconContainer: {
     alignItems: 'center',
     marginBottom: 16,
@@ -195,11 +227,10 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   levelTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#FFD700',
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#fff',
     textAlign: 'center',
-  },
   },
   userHeader: {
     flexDirection: 'row',
@@ -217,6 +248,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: 20,
+    marginBottom: 16,
   },
   levelText: {
     color: '#000',
@@ -225,6 +257,7 @@ const styles = StyleSheet.create({
   },
   xpSection: {
     marginBottom: 8,
+    width: '100%',
   },
   xpLabel: {
     color: '#aaa',
