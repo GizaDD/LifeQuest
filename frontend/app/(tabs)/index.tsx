@@ -86,6 +86,28 @@ export default function HomeScreen() {
             <Text style={styles.totalXP}>
               Всего XP: {user?.totalXP || 0}
             </Text>
+            
+            {/* Streak Section */}
+            {(user?.streak || 0) > 0 && (
+              <View style={styles.streakSection}>
+                <Text style={styles.streakText}>
+                  🔥 Серия: {user?.streak} {user?.streak === 1 ? 'день' : 'дней'}
+                </Text>
+                {(user?.streak || 0) >= 10 && (
+                  <Text style={styles.streakBonus}>
+                    Бонус XP: x{(() => {
+                      const s = user?.streak || 0;
+                      if (s >= 100) return 40;
+                      if (s >= 66) return 30;
+                      if (s >= 42) return 20;
+                      if (s >= 31) return 10;
+                      if (s >= 21) return 10;
+                      return 5;
+                    })()}
+                  </Text>
+                )}
+              </View>
+            )}
           </View>
 
           {/* Today's Tasks */}

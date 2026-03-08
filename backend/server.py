@@ -472,6 +472,27 @@ async def delete_mission(mission_id: str):
     
     return {"message": "Mission deleted successfully"}
 
+@api_router.put("/missions/{mission_id}", response_model=Mission)
+async def update_mission(mission_id: str, mission_update: MissionUpdate):
+    """Update an existing mission"""
+    mission = await db.missions.find_one({'_id': ObjectId(mission_id)})
+    
+    if not mission:
+        raise HTTPException(status_code=404, detail="Mission not found")
+    
+    update_data = mission_update.dict(exclude_unset=True)
+    
+    if update_data:
+        await db.missions.update_one(
+            {'_id': ObjectId(mission_id)},
+            {'$set': update_data}
+        )
+    
+    updated_mission = await db.missions.find_one({'_id': ObjectId(mission_id)})
+    updated_mission['id'] = str(updated_mission['_id'])
+    return Mission(**updated_mission)
+
+
 # ==================== COMPLETION ENDPOINTS ====================
 
 @api_router.post("/complete/step/{mission_id}/{task_idx}/{step_idx}")
@@ -503,6 +524,18 @@ async def complete_step(mission_id: str, task_idx: int, step_idx: int):
     
     # Mark step as completed
     step['isCompleted'] = True
+    step['lastCompletedDate'] = datetime.utcnow()
+    
+    # Update user stats
+    user = await db.users.find_one()
+    await db.users.update_one(
+        {'_id': user['_id']},
+        {'$inc': {'totalStepsCompleted': 1}}
+    )
+    
+    # Check if this is a daily task/step and update streak
+    if step.get('isDaily', False) or task.get('isDaily', False):
+        await update_streak()
     
     # Award XP for step
     await add_xp_to_user(step['xpReward'])
@@ -513,7 +546,14 @@ async def complete_step(mission_id: str, task_idx: int, step_idx: int):
     if all_steps_done and not task.get('isCompleted', False):
         # Complete the task
         task['isCompleted'] = True
+        task['lastCompletedDate'] = datetime.utcnow()
         await add_xp_to_user(task['xpReward'])
+        
+        # Update task stats
+        await db.users.update_one(
+            {'_id': user['_id']},
+            {'$inc': {'totalTasksCompleted': 1}}
+        )
         
         # Check if all tasks in mission are completed
         all_tasks_done = all(t.get('isCompleted', False) for t in tasks)
@@ -523,12 +563,24 @@ async def complete_step(mission_id: str, task_idx: int, step_idx: int):
             mission['isCompleted'] = True
             mission['completedAt'] = datetime.utcnow()
             
-            # Award mission XP to user
-            await add_xp_to_user(mission['totalXPReward'])
+            # Get streak multiplier for mission reward
+            user = await db.users.find_one()
+            multiplier = get_streak_multiplier(user.get('streak', 0))
+            mission_xp = int(mission['totalXPReward'] * multiplier)
             
-            # Award XP to skills
+            # Award mission XP to user with multiplier
+            await add_xp_to_user(mission_xp)
+            
+            # Award XP to skills (also with multiplier)
             for skill_reward in mission.get('skillRewards', []):
-                await add_xp_to_skill(skill_reward['skillId'], skill_reward['xpAmount'])
+                skill_xp = int(skill_reward['xpAmount'] * multiplier)
+                await add_xp_to_skill(skill_reward['skillId'], skill_xp)
+            
+            # Update mission stats
+            await db.users.update_one(
+                {'_id': user['_id']},
+                {'$inc': {'totalMissionsCompleted': 1}}
+            )
     
     # Update mission in database
     await db.missions.update_one(
@@ -551,6 +603,355 @@ async def complete_step(mission_id: str, task_idx: int, step_idx: int):
         "message": "Step completed successfully",
         "user": User(**updated_user),
         "mission": Mission(**updated_mission)
+    }
+
+# ==================== UNCOMPLETE ENDPOINTS ====================
+
+@api_router.post("/uncomplete/step/{mission_id}/{task_idx}/{step_idx}")
+async def uncomplete_step(mission_id: str, task_idx: int, step_idx: int):
+    """Uncomplete a step (remove checkmark)"""
+    mission = await db.missions.find_one({'_id': ObjectId(mission_id)})
+    
+    if not mission:
+        raise HTTPException(status_code=404, detail="Mission not found")
+    
+    tasks = mission.get('tasks', [])
+    
+    if task_idx >= len(tasks):
+        raise HTTPException(status_code=404, detail="Task not found")
+    
+    task = tasks[task_idx]
+    steps = task.get('steps', [])
+    
+    if step_idx >= len(steps):
+        raise HTTPException(status_code=404, detail="Step not found")
+    
+    step = steps[step_idx]
+    
+    if not step.get('isCompleted', False):
+        raise HTTPException(status_code=400, detail="Step is not completed")
+    
+    # Mark step as uncompleted
+    step['isCompleted'] = False
+    step['lastCompletedDate'] = None
+    
+    # If task was completed, uncomplete it
+    if task.get('isCompleted', False):
+        task['isCompleted'] = False
+        task['lastCompletedDate'] = None
+        # Remove task XP
+        await add_xp_to_user(-task['xpReward'])
+        
+        user = await db.users.find_one()
+        await db.users.update_one(
+            {'_id': user['_id']},
+            {'$inc': {'totalTasksCompleted': -1}}
+        )
+    
+    # If mission was completed, uncomplete it
+    if mission.get('isCompleted', False):
+        mission['isCompleted'] = False
+        mission['completedAt'] = None
+        
+        # Remove mission XP and skill XP (with multiplier)
+        user = await db.users.find_one()
+        multiplier = get_streak_multiplier(user.get('streak', 0))
+        mission_xp = int(mission['totalXPReward'] * multiplier)
+        await add_xp_to_user(-mission_xp)
+        
+        for skill_reward in mission.get('skillRewards', []):
+            skill_xp = int(skill_reward['xpAmount'] * multiplier)
+            await add_xp_to_skill(skill_reward['skillId'], -skill_xp)
+        
+        await db.users.update_one(
+            {'_id': user['_id']},
+            {'$inc': {'totalMissionsCompleted': -1}}
+        )
+    
+    # Remove step XP
+    await add_xp_to_user(-step['xpReward'])
+    
+    user = await db.users.find_one()
+    await db.users.update_one(
+        {'_id': user['_id']},
+        {'$inc': {'totalStepsCompleted': -1}}
+    )
+    
+    # Update mission in database
+    await db.missions.update_one(
+        {'_id': ObjectId(mission_id)},
+        {'$set': {
+            'tasks': tasks,
+            'isCompleted': mission.get('isCompleted', False),
+            'completedAt': mission.get('completedAt')
+        }}
+    )
+    
+    # Get updated data
+    updated_user = await db.users.find_one()
+    updated_mission = await db.missions.find_one({'_id': ObjectId(mission_id)})
+    
+    updated_user['id'] = str(updated_user['_id'])
+    updated_mission['id'] = str(updated_mission['_id'])
+    
+    return {
+        "message": "Step uncompleted successfully",
+        "user": User(**updated_user),
+        "mission": Mission(**updated_mission)
+    }
+
+@api_router.post("/complete/task/{mission_id}/{task_idx}")
+async def complete_task_without_steps(mission_id: str, task_idx: int):
+    """Complete a task that has no steps"""
+    mission = await db.missions.find_one({'_id': ObjectId(mission_id)})
+    
+    if not mission:
+        raise HTTPException(status_code=404, detail="Mission not found")
+    
+    if mission.get('isCompleted', False):
+        raise HTTPException(status_code=400, detail="Mission already completed")
+    
+    tasks = mission.get('tasks', [])
+    
+    if task_idx >= len(tasks):
+        raise HTTPException(status_code=404, detail="Task not found")
+    
+    task = tasks[task_idx]
+    
+    if task.get('isCompleted', False):
+        raise HTTPException(status_code=400, detail="Task already completed")
+    
+    # Check if task has steps
+    if len(task.get('steps', [])) > 0:
+        raise HTTPException(status_code=400, detail="Task has steps, complete them first")
+    
+    # Complete the task
+    task['isCompleted'] = True
+    task['lastCompletedDate'] = datetime.utcnow()
+    
+    user = await db.users.find_one()
+    
+    # Update streak if daily
+    if task.get('isDaily', False):
+        await update_streak()
+    
+    # Award task XP
+    await add_xp_to_user(task['xpReward'])
+    
+    # Update stats
+    await db.users.update_one(
+        {'_id': user['_id']},
+        {'$inc': {'totalTasksCompleted': 1}}
+    )
+    
+    # Check if all tasks completed
+    all_tasks_done = all(t.get('isCompleted', False) for t in tasks)
+    
+    if all_tasks_done:
+        mission['isCompleted'] = True
+        mission['completedAt'] = datetime.utcnow()
+        
+        # Get streak multiplier
+        user = await db.users.find_one()
+        multiplier = get_streak_multiplier(user.get('streak', 0))
+        mission_xp = int(mission['totalXPReward'] * multiplier)
+        
+        # Award mission XP with multiplier
+        await add_xp_to_user(mission_xp)
+        
+        # Award skill XP with multiplier
+        for skill_reward in mission.get('skillRewards', []):
+            skill_xp = int(skill_reward['xpAmount'] * multiplier)
+            await add_xp_to_skill(skill_reward['skillId'], skill_xp)
+        
+        # Update mission stats
+        await db.users.update_one(
+            {'_id': user['_id']},
+            {'$inc': {'totalMissionsCompleted': 1}}
+        )
+    
+    # Update mission
+    await db.missions.update_one(
+        {'_id': ObjectId(mission_id)},
+        {'$set': {
+            'tasks': tasks,
+            'isCompleted': mission.get('isCompleted', False),
+            'completedAt': mission.get('completedAt')
+        }}
+    )
+    
+    # Get updated data
+    updated_user = await db.users.find_one()
+    updated_mission = await db.missions.find_one({'_id': ObjectId(mission_id)})
+    
+    updated_user['id'] = str(updated_user['_id'])
+    updated_mission['id'] = str(updated_mission['_id'])
+    
+    return {
+        "message": "Task completed successfully",
+        "user": User(**updated_user),
+        "mission": Mission(**updated_mission)
+    }
+
+# ==================== REWARDS ENDPOINTS ====================
+
+@api_router.get("/rewards", response_model=List[Reward])
+async def get_rewards():
+    """Get all rewards"""
+    rewards = await db.rewards.find().sort('createdAt', -1).to_list(1000)
+    for reward in rewards:
+        reward['id'] = str(reward['_id'])
+    return [Reward(**reward) for reward in rewards]
+
+@api_router.post("/rewards", response_model=Reward)
+async def create_reward(reward_input: RewardCreate):
+    """Create a new reward"""
+    reward_data = Reward(**reward_input.dict()).dict(exclude={'id'})
+    result = await db.rewards.insert_one(reward_data)
+    reward = await db.rewards.find_one({'_id': result.inserted_id})
+    reward['id'] = str(reward['_id'])
+    return Reward(**reward)
+
+@api_router.delete("/rewards/{reward_id}")
+async def delete_reward(reward_id: str):
+    """Delete a reward"""
+    result = await db.rewards.delete_one({'_id': ObjectId(reward_id)})
+    
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Reward not found")
+    
+    return {"message": "Reward deleted successfully"}
+
+@api_router.post("/rewards/{reward_id}/purchase")
+async def purchase_reward(reward_id: str):
+    """Purchase a reward with XP"""
+    reward = await db.rewards.find_one({'_id': ObjectId(reward_id)})
+    
+    if not reward:
+        raise HTTPException(status_code=404, detail="Reward not found")
+    
+    if reward.get('isPurchased', False):
+        raise HTTPException(status_code=400, detail="Reward already purchased")
+    
+    user = await db.users.find_one()
+    
+    if user['currentXP'] + user.get('totalXP', 0) < reward['xpCost']:
+        raise HTTPException(status_code=400, detail="Not enough XP")
+    
+    # Deduct XP from user (from total, not current level XP)
+    xp_to_deduct = reward['xpCost']
+    
+    # Deduct from current XP first
+    if user['currentXP'] >= xp_to_deduct:
+        await db.users.update_one(
+            {'_id': user['_id']},
+            {'$inc': {'currentXP': -xp_to_deduct}}
+        )
+    else:
+        # Not enough in current, need to reduce total and potentially level
+        await db.users.update_one(
+            {'_id': user['_id']},
+            {'$inc': {'totalXP': -xp_to_deduct, 'currentXP': -xp_to_deduct}}
+        )
+        
+        # Recalculate level based on new total XP
+        user = await db.users.find_one()
+        new_total_xp = user['totalXP']
+        new_level = 0
+        xp_sum = 0
+        
+        while xp_sum + calculate_xp_for_level(new_level + 1) <= new_total_xp:
+            new_level += 1
+            xp_sum += calculate_xp_for_level(new_level)
+        
+        new_current_xp = new_total_xp - xp_sum
+        new_xp_to_next = calculate_xp_for_level(new_level + 1)
+        
+        await db.users.update_one(
+            {'_id': user['_id']},
+            {'$set': {
+                'level': new_level,
+                'currentXP': new_current_xp,
+                'xpToNextLevel': new_xp_to_next
+            }}
+        )
+    
+    # Mark reward as purchased
+    await db.rewards.update_one(
+        {'_id': ObjectId(reward_id)},
+        {'$set': {
+            'isPurchased': True,
+            'purchasedAt': datetime.utcnow()
+        }}
+    )
+    
+    updated_user = await db.users.find_one()
+    updated_reward = await db.rewards.find_one({'_id': ObjectId(reward_id)})
+    
+    updated_user['id'] = str(updated_user['_id'])
+    updated_reward['id'] = str(updated_reward['_id'])
+    
+    return {
+        "message": "Reward purchased successfully",
+        "user": User(**updated_user),
+        "reward": Reward(**updated_reward)
+    }
+
+# ==================== STATISTICS ENDPOINTS ====================
+
+@api_router.get("/statistics")
+async def get_statistics():
+    """Get user statistics"""
+    user = await db.users.find_one()
+    
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    # Get missions stats
+    total_missions = await db.missions.count_documents({})
+    completed_missions = await db.missions.count_documents({'isCompleted': True})
+    active_missions = total_missions - completed_missions
+    
+    # Get daily missions stats
+    daily_missions_total = await db.missions.count_documents({'type': 'daily'})
+    daily_missions_completed = await db.missions.count_documents({'type': 'daily', 'isCompleted': True})
+    
+    # Get skills stats
+    skills = await db.skills.find().to_list(1000)
+    total_skill_levels = sum(skill.get('level', 0) for skill in skills)
+    avg_skill_level = total_skill_levels / len(skills) if skills else 0
+    
+    # Get rewards stats
+    total_rewards = await db.rewards.count_documents({})
+    purchased_rewards = await db.rewards.count_documents({'isPurchased': True})
+    
+    return {
+        "user": {
+            "level": user.get('level', 0),
+            "totalXP": user.get('totalXP', 0),
+            "streak": user.get('streak', 0),
+            "longestStreak": user.get('longestStreak', 0),
+            "totalMissionsCompleted": user.get('totalMissionsCompleted', 0),
+            "totalTasksCompleted": user.get('totalTasksCompleted', 0),
+            "totalStepsCompleted": user.get('totalStepsCompleted', 0),
+        },
+        "missions": {
+            "total": total_missions,
+            "completed": completed_missions,
+            "active": active_missions,
+            "dailyTotal": daily_missions_total,
+            "dailyCompleted": daily_missions_completed,
+        },
+        "skills": {
+            "total": len(skills),
+            "totalLevels": total_skill_levels,
+            "averageLevel": round(avg_skill_level, 2),
+        },
+        "rewards": {
+            "total": total_rewards,
+            "purchased": purchased_rewards,
+            "available": total_rewards - purchased_rewards,
+        }
     }
 
 # ==================== BASIC ENDPOINTS ====================

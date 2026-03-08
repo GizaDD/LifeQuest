@@ -6,6 +6,12 @@ export interface User {
   xpToNextLevel: number;
   totalXP: number;
   lastDailyReset?: string;
+  streak: number;
+  lastStreakDate?: string;
+  longestStreak: number;
+  totalMissionsCompleted: number;
+  totalTasksCompleted: number;
+  totalStepsCompleted: number;
 }
 
 export interface Skill {
@@ -22,6 +28,8 @@ export interface Step {
   title: string;
   xpReward: number;
   isCompleted: boolean;
+  isDaily?: boolean;
+  lastCompletedDate?: string;
 }
 
 export interface Task {
@@ -29,6 +37,8 @@ export interface Task {
   xpReward: number;
   steps: Step[];
   isCompleted: boolean;
+  isDaily?: boolean;
+  lastCompletedDate?: string;
 }
 
 export interface SkillReward {
@@ -48,4 +58,14 @@ export interface Mission {
   completedAt?: string;
   createdAt?: string;
   lastResetDate?: string;
+}
+
+export interface Reward {
+  id?: string;
+  title: string;
+  description: string;
+  xpCost: number;
+  isPurchased: boolean;
+  purchasedAt?: string;
+  createdAt?: string;
 }
