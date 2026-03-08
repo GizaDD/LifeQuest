@@ -50,6 +50,24 @@ export default function TabLayout() {
           ),
         }}
       />
+      <Tabs.Screen
+        name="rewards"
+        options={{
+          title: 'Награды',
+          tabBarIcon: ({ color }) => (
+            <Text style={{ fontSize: 24, color }}>🎁</Text>
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="statistics"
+        options={{
+          title: 'Статистика',
+          tabBarIcon: ({ color }) => (
+            <Text style={{ fontSize: 24, color }}>📊</Text>
+          ),
+        }}
+      />
     </Tabs>
   );
 }

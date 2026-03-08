@@ -280,6 +280,24 @@ const styles = StyleSheet.create({
   xpSection: {
     marginBottom: 8,
     width: '100%',
+  streakSection: {
+    backgroundColor: '#2a2a2a',
+    borderRadius: 12,
+    padding: 12,
+    marginTop: 12,
+    alignItems: 'center',
+  },
+  streakText: {
+    color: '#FFD700',
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginBottom: 4,
+  },
+  streakBonus: {
+    color: '#4CAF50',
+    fontSize: 14,
+    fontWeight: '600',
+  },
   },
   xpLabel: {
     color: '#aaa',

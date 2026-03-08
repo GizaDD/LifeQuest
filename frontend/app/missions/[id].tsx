@@ -40,14 +40,58 @@ export default function MissionDetailScreen() {
   const handleCompleteStep = async (taskIdx: number, stepIdx: number) => {
     if (!mission) return;
 
+    const step = mission.tasks[taskIdx].steps[stepIdx];
+    
+    // If already completed, uncomplete it
+    if (step.isCompleted) {
+      try {
+        const response = await api.uncompleteStep(mission.id!, taskIdx, stepIdx);
+        setMission(response.data.mission);
+        await refreshAll();
+        Alert.alert('Отменено', `Шаг отменён. -${step.xpReward} XP`);
+      } catch (error: any) {
+        const message = error.response?.data?.detail || 'Ошибка при отмене';
+        Alert.alert('Ошибка', message);
+      }
+      return;
+    }
+
+    // Complete step
     try {
       const response = await api.completeStep(mission.id!, taskIdx, stepIdx);
       setMission(response.data.mission);
       await refreshAll();
       
       // Show XP gain feedback
-      const step = mission.tasks[taskIdx].steps[stepIdx];
       Alert.alert('Успех!', `+${step.xpReward} XP`);
+    } catch (error: any) {
+      const message = error.response?.data?.detail || 'Ошибка при выполнении';
+      Alert.alert('Ошибка', message);
+    }
+  };
+
+  const handleCompleteTask = async (taskIdx: number) => {
+    if (!mission) return;
+
+    const task = mission.tasks[taskIdx];
+    
+    // Only allow if task has no steps
+    if (task.steps.length > 0) {
+      Alert.alert('Ошибка', 'Сначала выполните все шаги задачи');
+      return;
+    }
+
+    if (task.isCompleted) {
+      Alert.alert('Ошибка', 'Задача уже выполнена');
+      return;
+    }
+
+    try {
+      const response = await api.completeTask(mission.id!, taskIdx);
+      setMission(response.data.mission);
+      await refreshAll();
+      
+      Alert.alert('Успех!', `Задача выполнена! +${task.xpReward} XP`);
     } catch (error: any) {
       const message = error.response?.data?.detail || 'Ошибка при выполнении';
       Alert.alert('Ошибка', message);
@@ -155,14 +199,14 @@ export default function MissionDetailScreen() {
                 </View>
 
                 {/* Steps */}
-                {task.steps.length > 0 && (
+                {task.steps.length > 0 ? (
                   <View style={styles.stepsContainer}>
                     {task.steps.map((step, stepIdx) => (
                       <TouchableOpacity
                         key={stepIdx}
                         style={styles.stepItem}
-                        onPress={() => !step.isCompleted && handleCompleteStep(taskIdx, stepIdx)}
-                        disabled={step.isCompleted || mission.isCompleted}
+                        onPress={() => handleCompleteStep(taskIdx, stepIdx)}
+                        disabled={mission.isCompleted}
                       >
                         <View style={[
                           styles.checkbox,
@@ -180,6 +224,17 @@ export default function MissionDetailScreen() {
                       </TouchableOpacity>
                     ))}
                   </View>
+                ) : (
+                  // Task without steps - show complete button
+                  !task.isCompleted && (
+                    <TouchableOpacity
+                      style={styles.completeTaskButton}
+                      onPress={() => handleCompleteTask(taskIdx)}
+                      disabled={mission.isCompleted}
+                    >
+                      <Text style={styles.completeTaskButtonText}>Завершить задачу</Text>
+                    </TouchableOpacity>
+                  )
                 )}
               </View>
             ))}
@@ -356,6 +411,18 @@ const styles = StyleSheet.create({
   completedText: {
     color: '#4CAF50',
     textDecorationLine: 'line-through',
+  },
+  completeTaskButton: {
+    backgroundColor: '#4CAF50',
+    padding: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  completeTaskButtonText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: 'bold',
   },
   completedBanner: {
     backgroundColor: '#4CAF50',
