@@ -1,21 +1,67 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, RefreshControl } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import * as api from '../../utils/api';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ProgressBar } from '../../components/ProgressBar';
+import { useApp } from '../../contexts/AppContext';
+
+const REWARDS_STORAGE_KEY = 'rewards';
 
 export default function StatisticsScreen() {
+  const { user, skills, missions, refreshAll } = useApp();
   const [stats, setStats] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     loadStatistics();
-  }, []);
+  }, [user, skills, missions]);
 
   const loadStatistics = async () => {
     try {
-      const response = await api.getStatistics();
-      setStats(response.data);
+      setLoading(true);
+
+      const storedRewards = await AsyncStorage.getItem(REWARDS_STORAGE_KEY);
+      const rewards = storedRewards ? JSON.parse(storedRewards) : [];
+
+      const totalMissions = missions.length;
+      const completedMissions = missions.filter((m: any) => m.isCompleted || m.status === 'completed').length;
+      const activeMissions = totalMissions - completedMissions;
+
+      const totalSkills = skills.length;
+      const totalLevels = skills.reduce((sum: number, skill: any) => sum + (skill.level || 0), 0);
+      const averageLevel = totalSkills > 0 ? (totalLevels / totalSkills).toFixed(1) : 0;
+
+      const purchasedRewards = rewards.filter((r: any) => r.isPurchased).length;
+      const availableRewards = rewards.filter((r: any) => !r.isPurchased).length;
+
+      const computedStats = {
+        user: {
+          level: user?.level || 0,
+          totalXP: user?.totalXP || 0,
+          streak: user?.streak || 0,
+          longestStreak: user?.longestStreak || 0,
+          totalMissionsCompleted: user?.totalMissionsCompleted || completedMissions,
+          totalTasksCompleted: user?.totalTasksCompleted || 0,
+          totalStepsCompleted: user?.totalStepsCompleted || 0,
+        },
+        missions: {
+          total: totalMissions,
+          completed: completedMissions,
+          active: activeMissions,
+        },
+        skills: {
+          total: totalSkills,
+          averageLevel: averageLevel,
+          totalLevels: totalLevels,
+        },
+        rewards: {
+          total: rewards.length,
+          purchased: purchasedRewards,
+          available: availableRewards,
+        },
+      };
+
+      setStats(computedStats);
     } catch (error) {
       console.error('Error loading statistics:', error);
     } finally {
@@ -39,9 +85,19 @@ export default function StatisticsScreen() {
         <Text style={styles.title}>Статистика</Text>
       </View>
 
-      <ScrollView style={styles.scrollView} refreshControl={<RefreshControl refreshing={loading} onRefresh={loadStatistics} />}>
+      <ScrollView
+        style={styles.scrollView}
+        refreshControl={
+          <RefreshControl
+            refreshing={loading}
+            onRefresh={async () => {
+              await refreshAll();
+              await loadStatistics();
+            }}
+          />
+        }
+      >
         <View style={styles.content}>
-          {/* User Stats */}
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Общая статистика</Text>
             <View style={styles.statCard}>
@@ -64,7 +120,6 @@ export default function StatisticsScreen() {
             </View>
           </View>
 
-          {/* Missions Stats */}
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Миссии</Text>
             <View style={styles.statCard}>
@@ -83,13 +138,17 @@ export default function StatisticsScreen() {
               <View style={styles.progressRow}>
                 <Text style={styles.statLabel}>Прогресс:</Text>
                 <View style={styles.progressBarContainer}>
-                  <ProgressBar current={stats.missions.completed} max={stats.missions.total} height={12} showLabel={false} />
+                  <ProgressBar
+                    current={stats.missions.completed}
+                    max={stats.missions.total || 1}
+                    height={12}
+                    showLabel={false}
+                  />
                 </View>
               </View>
             </View>
           </View>
 
-          {/* Completion Stats */}
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Выполнено</Text>
             <View style={styles.statGrid}>
@@ -108,7 +167,6 @@ export default function StatisticsScreen() {
             </View>
           </View>
 
-          {/* Skills Stats */}
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Навыки</Text>
             <View style={styles.statCard}>
@@ -127,7 +185,6 @@ export default function StatisticsScreen() {
             </View>
           </View>
 
-          {/* Rewards Stats */}
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Награды</Text>
             <View style={styles.statCard}>
